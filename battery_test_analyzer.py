@@ -43,23 +43,39 @@ class BatteryTestAnalyzer:
             # Collect measurements which no current is applied
             rest_data = cycle_data[cycle_data['test_cur'] == 0]
 
+            # Minimum voltage
             v_min = cycle_data['test_vol'].min()
+
+            # Maximum voltage
             v_max = cycle_data['test_vol'].max()
+
+            # Maximum current
             i_max = round(cycle_data['test_cur'].abs().max() / 1000, 1)  # Convert mAmps to Amps
 
+            # Capacity charge - Positive current over time
             cap_chg = (charge_data['test_cur'] * charge_data['dt']).sum() / 1000  # Convert mAmps to Amps
+
+            # Capacity discharge - Negative current over time
             cap_dchg = (discharge_data['test_cur'] * discharge_data['dt']).sum() / 1000
 
+            # Energy charge
             engy_chg = (charge_data['test_vol'] * charge_data['test_cur'] * charge_data[
                 'dt']).sum() / 3600  # Convert mWh to Wh
-            engy_dchg = (discharge_data['test_vol'] * discharge_data['test_cur'] * discharge_data['dt']).sum() / 3600
 
+            # Energy discharge
+            engy_dchg = (discharge_data['test_vol'] * discharge_data['test_cur'] * discharge_data[
+                'dt']).sum() / 3600  # Convert mWh to Wh
+
+            # OCV drop charge
             ocv_drop_chg = rest_data.iloc[-1]['test_vol'] - rest_data.iloc[0]['test_vol']
+
+            # OCV drop discharge
             ocv_drop_dchg = -ocv_drop_chg  # Assuming the voltage rise is equal to the voltage drop
 
+            # Charge duration
             charge_duration = charge_data['dt'].sum()
-            cc_charge_time = charge_data[charge_data['step_type'] == 1]['dt'].sum()
 
+            cc_charge_time = charge_data[charge_data['step_type'] == 1]['dt'].sum()
             cc_ratio = round(100 * cc_charge_time / charge_duration, 1) if charge_duration > 0 else None
 
             aggregated_data.append({
