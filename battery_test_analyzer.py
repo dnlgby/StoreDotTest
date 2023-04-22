@@ -3,6 +3,8 @@ import io
 import matplotlib.pyplot as plt
 import pandas as pd
 
+pd.set_option('mode.chained_assignment', None)  # Disable the warning about chained assignment
+
 
 class BatteryTestAnalyzer:
     def __init__(self, file_content):
@@ -56,26 +58,59 @@ class BatteryTestAnalyzer:
             cap_chg = (charge_data['test_cur'] * charge_data['dt']).sum() / 1000  # Convert mAmps to Amps
 
             # Capacity discharge - Negative current over time
-            cap_dchg = (discharge_data['test_cur'] * discharge_data['dt']).sum() / 1000
+            cap_dchg = (discharge_data['test_cur'] * discharge_data['dt']).sum() / 1000  # Convert mAmps to Amps
 
-            # Energy charge
+            # Energy charge (Power(W) = Voltage(V) * Current(A) => Energy(J) = Power(W) * Time(s))
             engy_chg = (charge_data['test_vol'] * charge_data['test_cur'] * charge_data[
                 'dt']).sum() / 3600  # Convert mWh to Wh
 
-            # Energy discharge
+            # Energy discharge (Power(W) = Voltage(V) * Current(A) => Energy(J) = Power(W) * Time(s))
             engy_dchg = (discharge_data['test_vol'] * discharge_data['test_cur'] * discharge_data[
                 'dt']).sum() / 3600  # Convert mWh to Wh
 
-            # OCV drop charge
-            ocv_drop_chg = rest_data.iloc[-1]['test_vol'] - rest_data.iloc[0]['test_vol']
+            # Default values to cover the case that no charging or discharging is done
+            ocv_drop_chg = ocv_drop_dchg = 0
 
-            # OCV drop discharge
-            ocv_drop_dchg = -ocv_drop_chg  # Assuming the voltage rise is equal to the voltage drop
+            # Store the step type of the previous measurement in a new column
+            cycle_data = cycle_data.copy()
+            cycle_data['shifted_step_type'] = cycle_data['step_type'].shift(1)
+
+            # Rest periods
+            rest_periods = cycle_data[(cycle_data['test_cur'] == 0) & (cycle_data['step_type'] == 4)]
+
+            """
+                Grouping rest periods
+            """
+            # Calculate the difference between the current index and the previous index
+            rest_periods['index_diff'] = rest_periods.index.to_series().diff()
+
+            # Identify consecutive rows by comparing the calculated difference with 1
+            rest_periods['is_consecutive'] = rest_periods['index_diff'] == 1
+
+            # Assign a unique group id for each non-consecutive row using cumsum()
+            # (Group id will be unique - cumsum will assign a new id for each non-consecutive row)
+            rest_periods['group_id'] = (~rest_periods['is_consecutive']).cumsum()
+
+            # Iterate rest groups
+            for rest_group_id, rest_group in rest_periods.groupby('group_id'):
+
+                # First item in group shifted_step_type is 1 or 7 (first rest after charge type 1 or 7)
+                # Here 'ocv_drop_chg' will be updated if we meet a new charging phase, not sure what is the
+                # order or the correct behavior of the step types.
+                if rest_group.iloc[0]['shifted_step_type'] in [1, 7]:
+                    ocv_drop_chg = rest_group.iloc[-1]['test_vol'] - rest_group.iloc[0]['test_vol']
+
+                # First item in group shifted_step_type is 2 (first rest after discharge)
+                if ocv_drop_dchg == 0 and rest_group.iloc[0]['shifted_step_type'] in [2]:
+                    ocv_drop_dchg = rest_group.iloc[-1]['test_vol'] - rest_group.iloc[0]['test_vol']
 
             # Charge duration
             charge_duration = charge_data['dt'].sum()
 
+            # CC charge time
             cc_charge_time = charge_data[charge_data['step_type'] == 1]['dt'].sum()
+
+            # CC charge ratio
             cc_ratio = round(100 * cc_charge_time / charge_duration, 1) if charge_duration > 0 else None
 
             aggregated_data.append({
